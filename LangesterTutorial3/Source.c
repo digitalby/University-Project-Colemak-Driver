@@ -94,6 +94,9 @@ NTSTATUS ReadWillComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context)
         }
     }
 
+    //FIXME: Test line.
+    keyBuffer->MakeCode++;
+
     //Handle any pending IRP requests.
     if (Irp->PendingReturned) {
         IoMarkIrpPending(Irp);
