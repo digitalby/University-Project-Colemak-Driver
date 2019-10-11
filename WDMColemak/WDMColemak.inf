@@ -7,8 +7,8 @@ Signature="$WINDOWS NT$"
 Class=System
 ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider=%ManufacturerName%
-DriverVer = 10/11/2019,16.8.20.341
-CatalogFile=LangesterTutorial3.cat
+DriverVer=
+CatalogFile=WDMColemak.cat
 
 [DestinationDirs]
 DefaultDestDir = 12
@@ -21,12 +21,12 @@ DefaultDestDir = 12
 
 
 [Manufacturer]
-%ManufacturerName%=Standard,NTamd64
+%ManufacturerName%=Standard,NT$ARCH$
 
-[Standard.NTamd64]
+[Standard.NT$ARCH$]
 
 
 [Strings]
-ManufacturerName="<Your manufacturer name>" ;TODO: Replace with your manufacturer name
+ManufacturerName="github.com/digitalby"
 ClassName=""
-DiskName="LangesterTutorial3 Source Disk"
+DiskName="WDMColemak Source Disk"
