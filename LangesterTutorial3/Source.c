@@ -1,6 +1,12 @@
 //ntddk.h is typically used in windows kernel driver development
-#include "ntddk.h" 
+#include "ntddk.h"
 
+#define SCANCODE_CTRL 0x1d
+#define SCANCODE_ALT 0x38
+#define SCANCODE_F11 0x57
+#define SCANCODE_F12 0x58
+
+//A conversion of scan codes to human readable key names (QWERTY Layout)
 PCHAR keyNamesQWERTYStandard[] = {
     "0x00", //0x00
     "ESC", //0x01
@@ -60,7 +66,7 @@ PCHAR keyNamesQWERTYStandard[] = {
     "KP_ASTERISK", //0x37
     "ALT", //0x38
     "SPACEBAR", //0x39
-    "CAPSLOCK", //0x3a
+    "CAPS_LOCK", //0x3a
     "F1", //0x3b
     "F2", //0x3c
     "F3", //0x3d
@@ -93,6 +99,7 @@ PCHAR keyNamesQWERTYStandard[] = {
     "F12" //0x58
 };
 
+//A conversion of scan codes to human readable key names (Colemak Layout)
 PCHAR keyNamesColemakStandard[] = {
     "0x00", //0x00
     "ESC", //0x01
@@ -152,7 +159,7 @@ PCHAR keyNamesColemakStandard[] = {
     "KP_ASTERISK", //0x37
     "ALT", //0x38
     "SPACEBAR", //0x39
-    "CAPSLOCK", //0x3a
+    "CAPS_LOCK", //0x3a
     "F1", //0x3b
     "F2", //0x3c
     "F3", //0x3d
@@ -185,6 +192,99 @@ PCHAR keyNamesColemakStandard[] = {
     "F12" //0x58
 };
 
+//A conversion of QWERTY scan codes to respective Colemak key presses.
+PUSHORT keyMapQWERTYToColemak[] = {
+    0x00, //0x00
+    0x01, //ESC
+    0x02, //1
+    0x03, //2
+    0x04, //3
+    0x05, //4
+    0x06, //5
+    0x07, //6
+    0x08, //7
+    0x09, //8
+    0x0a, //9
+    0x0b, //0
+    0x0c, //MINUS
+    0x0d, //EQUAL
+    0x0e, //BACKSPACE
+    0x0f, //TAB
+    0x10, //Q
+    0x11, //W
+    0x21, //F
+    0x19, //P
+    0x22, //G
+    0x24, //J
+    0x26, //L
+    0x16, //U
+    0x15, //Y
+    0x27, //SEMICOLON
+    0x1a, //LEFT_BRACKET
+    0x1b, //RIGHT_BRACKET
+    0x1c, //RETURN
+    0x1d, //CTRL
+    0x1e, //A
+    0x13, //R
+    0x1f, //S
+    0x14, //T
+    0x20, //D
+    0x23, //H
+    0x31, //N
+    0x12, //E
+    0x17, //I
+    0x18, //O
+    0x28, //APOSTROPHE
+    0x29, //GRAVE
+    0x2a, //LEFT_SHIFT
+    0x2b, //US_BACKSLASH
+    0x2c, //Z
+    0x2d, //X
+    0x2e, //C
+    0x2f, //V
+    0x30, //B
+    0x25, //K
+    0x32, //M
+    0x33, //COMMA
+    0x34, //PERIOD
+    0x35, //SLASH
+    0x36, //RIGHT_SHIFT
+    0x37, //KP_ASTERISK
+    0x38, //ALT
+    0x39, //SPACEBAR
+    0x3a, //CAPS_LOCK
+    0x3b, //F1
+    0x3c, //F2
+    0x3d, //F3
+    0x3e, //F4
+    0x3f, //F5
+    0x40, //F6
+    0x41, //F7
+    0x42, //F8
+    0x43, //F9
+    0x44, //F10
+    0x45, //NUM_LOCK
+    0x46, //SCROLL_LOCK
+    0x47, //KP_7
+    0x48, //KP_8
+    0x49, //KP_9
+    0x4a, //KP_MINUS
+    0x4b, //KP_4
+    0x4c, //KP_5
+    0x4d, //KP_6
+    0x4e, //KP_PLUS
+    0x4f, //KP_1
+    0x50, //KP_2
+    0x51, //KP_3
+    0x52, //KP_0
+    0x53, //KP_PERIOD
+    0x54, //0x54
+    0x55, //0x55
+    0x56, //ISO_KEY
+    0x57, //F11
+    0x58 //F12
+};
+
 typedef struct {
     PDEVICE_OBJECT LowerKbdDevice;
 } DEVICE_EXTENSION,*PDEVICE_EXTENSION;
@@ -203,6 +303,16 @@ typedef struct _KEYBOARD_INPUT_DATA {
 PDEVICE_OBJECT keyboardDevice = NULL;
 //Counter for the number of keys pending to be processed.
 ULONG numberOfPendingKeys = 0;
+
+//Indicates whether Colemak mode is activated.
+BOOLEAN colemakActivated = TRUE;
+//Indicates whether key logging features are activated.
+BOOLEAN loggingActivated = FALSE;
+
+//Indicates whether CTRL key is being held.
+BOOLEAN isCtrlHeld = FALSE;
+//Indicates whether ALT key is being held.
+BOOLEAN isAltHeld = FALSE;
 
 //Called when the driver is being unloaded.
 VOID DriverWillUnload(IN PDRIVER_OBJECT DriverObject)
@@ -261,10 +371,54 @@ NTSTATUS WillAttachDevice(PDRIVER_OBJECT DriverObject)
     return STATUS_SUCCESS;
 }
 
+//Logs supplied key buffer data to windbg.
+VOID LogKeyBufferToWinDbg(PKEYBOARD_INPUT_DATA keyBuffer) {
+    PCHAR keyFlagValues[4] = { "KEY_MAKE", "KEY_BREAK", "EXTENDED0", "EXTENDED1" };
+    //If KEY_MAKE or KEY_BREAK flag is present, log the full info.
+    if (keyBuffer->Flags < 2)
+        DbgPrint("ReadWillComplete got scan code %x/%s (QWERTY: %s; Colemak:%s)\r\n",
+            keyBuffer->MakeCode,
+            keyFlagValues[keyBuffer->Flags],
+            keyNamesQWERTYStandard[keyBuffer->MakeCode],
+            keyNamesColemakStandard[keyBuffer->MakeCode]
+        );
+    else DbgPrint("ReadWillComplete got scan code %x/%s\r\n",
+        keyBuffer->MakeCode,
+        keyFlagValues[keyBuffer->Flags]);
+}
+
+VOID CheckHotkeys(PKEYBOARD_INPUT_DATA keyBuffer) {
+    //If KEY_MAKE or KEY_BREAK flag is not present, stop execution.
+    if (keyBuffer->Flags >= 2)
+        return;
+    //Check for CTRL key.
+    if (keyBuffer->MakeCode == SCANCODE_CTRL) {
+        isCtrlHeld = !keyBuffer->Flags;
+        DbgPrint("Set isCtrlHeld to %d\r\n", isCtrlHeld);
+    }
+    //Check for ALT key.
+    if (keyBuffer->MakeCode == SCANCODE_ALT) {
+        isAltHeld = !keyBuffer->Flags;
+        DbgPrint("Set isAltHeld to %d\r\n", isAltHeld);
+    }
+    //Check for special hotkeys. The respective key must have KEY_BREAK flag.
+    if (keyBuffer->Flags != 1 || !isCtrlHeld || !isAltHeld)
+        return;
+    //Check for CTRL+ALT+F11
+    if (keyBuffer->MakeCode == SCANCODE_F11) {
+        loggingActivated = !loggingActivated;
+        DbgPrint("Set loggingActivated to %d\r\n", loggingActivated);
+    }
+    //Check for CTRL+ALT+F12
+    if (keyBuffer->MakeCode == SCANCODE_F12) {
+        colemakActivated = !colemakActivated;
+        DbgPrint("Set colemakActivated to %d\r\n", colemakActivated);
+    }
+}
+
 //Called when the READ request's completion routine is to be executed.
 NTSTATUS ReadWillComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context)
 {
-    PCHAR keyFlagValues[4] = { "KEY_MAKE", "KEY_BREAK", "EXTENDED0", "EXTENDED1" };
     //Get the keyboard's key input buffer.
     PKEYBOARD_INPUT_DATA keyBuffer = (PKEYBOARD_INPUT_DATA)Irp->AssociatedIrp.SystemBuffer;
     //Get the number of bytes being transferred in the buffer, then convert it to the number of items in array.
@@ -274,23 +428,15 @@ NTSTATUS ReadWillComplete(PDEVICE_OBJECT DeviceObject, PIRP Irp, PVOID Context)
     if (Irp->IoStatus.Status == STATUS_SUCCESS) {
         //...loop through each buffered keypress being read...
         for (int i = 0; i < numberOfItemsInBuffer; i++) {
-            //...and log the acquired scan code and its flag value (usually either KEY_MAKE or KEY_BREAK).
-            if (keyBuffer->Flags < 2)
-                //If KEY_MAKE or KEY_BREAK flag is present, also log the key name.
-                DbgPrint("ReadWillComplete got scan code %x/%s (QWERTY: %s; Colemak:%s)\r\n",
-                    keyBuffer->MakeCode,
-                    keyFlagValues[keyBuffer->Flags],
-                    keyNamesQWERTYStandard[keyBuffer->MakeCode],
-                    keyNamesColemakStandard[keyBuffer->MakeCode]
-                    );
-            else DbgPrint("ReadWillComplete got scan code %x/%s\r\n",
-                keyBuffer->MakeCode,
-                keyFlagValues[keyBuffer->Flags]);
+            //...log the acquired scan code and its flag value (usually either KEY_MAKE or KEY_BREAK)...
+            LogKeyBufferToWinDbg(keyBuffer);
+            //...check for modifier keys being pressed and their respective hotkeys...
+            CheckHotkeys(keyBuffer);
+            //...convert to Colemak if needed...
+            if (colemakActivated)
+                keyBuffer->MakeCode = keyMapQWERTYToColemak[keyBuffer->MakeCode];
         }
     }
-
-    //FIXME: Test line.
-    keyBuffer->MakeCode++;
 
     //Handle any pending IRP requests.
     if (Irp->PendingReturned) {

@@ -7,7 +7,7 @@ Signature="$WINDOWS NT$"
 Class=System
 ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider=%ManufacturerName%
-DriverVer = 10/11/2019,0.40.59.788
+DriverVer = 10/11/2019,16.8.20.341
 CatalogFile=LangesterTutorial3.cat
 
 [DestinationDirs]
